@@ -1,0 +1,28 @@
+[versions]
+# Core build and tooling. Kept in step with kontour-labs/ui: a library compiled
+# with a newer Kotlin than its consumer is one the consumer cannot read.
+agp = "9.3.1"
+kotlin = "2.4.10"
+# Stable, and nothing above `ui`: the icons need `ImageVector` and its builder,
+# and no Compose compiler, because none of them is a composable.
+composeMultiplatform = "1.12.1"
+
+# Build-time only, in buildSrc: it writes the icon sources and never ships.
+kotlinpoet = "2.4.0"
+
+# Android
+android-compileSdk = "37"
+android-minSdk = "29"
+
+[libraries]
+kotlinpoet = { module = "com.squareup:kotlinpoet", version.ref = "kotlinpoet" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
+
+[plugins]
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+# `visual-check/` only, which draws the icons with Compose Desktop.
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }

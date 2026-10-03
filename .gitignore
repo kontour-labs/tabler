@@ -1,0 +1,11 @@
+*.iml
+.kotlin
+.gradle
+**/build/
+local.properties
+.idea
+.DS_Store
+captures
+kotlin-js-store/
+node_modules/
+package-lock.json

@@ -1,0 +1,139 @@
+# Tests the generator, and every icon it generates, when the code changes.
+#
+#   :buildSrc:test      the path-data parser, the naming, the file shape (a
+#                       golden `Abc.kt`), and the failures on anything unknown
+#   :…-outline:jvmTest  every icon held to Compose's own `PathParser` reading of
+#   :…-filled:jvmTest   Tabler's data: path by path, node by node
+#
+# The JVM only, because that is where the tests run: the icons are common code
+# with no platform code at all, so a target that compiled on the JVM and not
+# elsewhere would be a Kotlin bug rather than ours. **full** compiles the other
+# five as well; the release compiles them every time anyway.
+#
+# **visual** runs the visual check over every icon (`visual-check/run.sh`): each
+# one drawn by Compose and by Chrome, and compared. About six to eight minutes,
+# so only when asked; the release workflow runs it anyway, on what changed.
+#
+# ### When it runs
+#
+# Pushes to `main` that change code, and by hand. **Not** on pull requests,
+# for the same reason as kontour-labs/ui: the repository is private and every
+# minute is billed. A branch that wants the checks asks for them: Actions → CI →
+# Run workflow, on that branch.
+#
+# Not on the release workflow's own commits either, which only move the
+# Tabler pin: pushes made with `GITHUB_TOKEN` start no workflows, and a new
+# Tabler release is published untested by design. The generator fails the
+# build on anything in Tabler's data it does not understand, which is the
+# release's safety net.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'buildSrc/**'
+      - 'core/**'
+      - 'outline/**'
+      - 'filled/**'
+      - 'test-support/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - '.github/**'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: >-
+          Compile and package all six targets as well, as a release does.
+        type: boolean
+        required: false
+        default: false
+      visual:
+        description: >-
+          Draw every icon with Compose and with Chrome and compare them, as a
+          release does after a code change. About six to eight minutes.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+# A newer push makes an older run's answer moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    env:
+      FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full }}
+      VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.visual }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native
+        if: env.FULL == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Check the release scripts
+        run: for script in .github/scripts/*.sh visual-check/run.sh; do bash -n "$script"; done
+
+      # One invocation: each `./gradlew --no-daemon` is a fresh JVM and a fresh
+      # task graph.
+      - name: Test
+        run: |
+          tasks=(:buildSrc:test :tabler-icons-outline:jvmTest :tabler-icons-filled:jvmTest)
+          if [ "$FULL" = true ]; then
+            tasks+=(assemble)
+          fi
+          echo "${tasks[*]}"
+          ./gradlew --no-daemon "${tasks[@]}"
+
+      # After the tests, which have compiled what it draws.
+      - name: Visual check
+        if: env.VISUAL == 'true'
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
+        run: |
+          npm install --no-save --no-package-lock --silent playwright-core@1.56.1
+          visual-check/run.sh
+
+      - name: Upload the contact sheet
+        if: always() && env.VISUAL == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-check
+          path: |
+            visual-check/build/contact-sheet.png
+            visual-check/build/report.tsv
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            buildSrc/build/reports/tests/
+            outline/build/reports/tests/
+            filled/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 7
