@@ -95,21 +95,28 @@ and asks npm for Tabler's latest release. If that release is already tagged here
 the job ends after about ten seconds. If it isn't, the workflow does this:
 
 1. Pins it in [`gradle.properties`](gradle.properties): `tabler.version`, and
-   `tabler.integrity`, npm's checksum of the tarball.
-2. Commits that to `main` as `github-actions[bot]` and tags it `v<version>`.
-3. Builds all six targets and publishes to GitHub Packages. It runs no tests.
-4. Creates a GitHub release that lists the icons added, redrawn and removed.
+   `tabler.integrity`, npm's checksum of the tarball. Commits that and tags it
+   `v<version>`, locally for now.
+2. Runs the [visual check](#do-they-look-like-tablers) on the icons Tabler added
+   or redrew since the last release. If the code that draws the icons has changed
+   since then, it checks every icon instead. If any icon doesn't look like
+   Tabler's, the release stops here and nothing is pushed or published. The
+   contact sheet is uploaded as the run's `visual-check` artifact.
+3. Pushes the commit to `main` as `github-actions[bot]`, along with the tag.
+4. Builds all six targets and publishes to GitHub Packages.
+5. Creates a GitHub release that lists the icons added, redrawn and removed.
    Removals are breaking, and they're flagged as such.
 
-Tests run in [`ci.yml`](.github/workflows/ci.yml) when the code that generates
-the icons changes, not on every Tabler release. The generator fails the build
-on anything in Tabler's data it doesn't understand, so a format change stops a
-release instead of shipping broken icons.
+Unit tests run in [`ci.yml`](.github/workflows/ci.yml) when the code that
+generates the icons changes, not on every Tabler release. The generator fails
+the build on anything in Tabler's data it doesn't understand, so a format change
+stops a release instead of shipping broken icons.
 
 Both workflows are written for a private repository's minute allowance. A week
 with nothing new costs one billed minute. A release costs one build, and a set
 Tabler left alone comes out of the Gradle build cache instead of being compiled
-again.
+again. The visual check adds a minute or two when it only checks the new icons,
+and six to eight minutes when the code changed and it checks all of them.
 
 **By hand:** Actions → Release → Run workflow. Leave the version blank for the
 latest, or pick one. Tick **dry run** to build without committing, tagging or
@@ -145,16 +152,27 @@ every time, into `build/`.
 ### Do they look like Tabler's?
 
 ```sh
-visual-check/run.sh      # needs Node with Playwright: npm i -g playwright && npx playwright install chromium
+visual-check/run.sh              # every icon, about five minutes
+visual-check/run.sh icons.txt    # only these: one `outline/bell` or `filled/star` per line
+# needs Node with Playwright: npm i -g playwright && npx playwright install chromium
 ```
 
-This draws every icon twice: Tabler's SVG in Chromium, and our `ImageVector` in
-Compose Desktop. Then it compares the pixels. It fails if any icon differs by
-more than anti-aliasing, and also if a deliberately wrong drawing (a different
-icon, or a thinner stroke) gets through. It writes a score for every icon to
-`visual-check/build/report.tsv` and a contact sheet to
-`visual-check/build/contact-sheet.png`. It takes about five minutes and isn't
-part of CI. Run it after changing how the icons are drawn.
+This draws each icon twice: Tabler's SVG in Chromium, and our `ImageVector` in
+Compose Desktop. Then it compares the pixels.
+
+An icon fails if more than 0.2% of its pixels are wrong. A pixel counts as wrong
+when it's more than 25% off every pixel within one pixel of it in the other
+drawing. That tolerance absorbs edges that two renderers place half a pixel
+apart, but a spike or a missing cap is several pixels long, so it still counts.
+The check also fails if a deliberately wrong drawing (a different icon, or a
+thinner stroke) gets through.
+
+It writes a score for every icon to `visual-check/build/report.tsv` and a
+contact sheet to `visual-check/build/contact-sheet.png`.
+
+Every release runs it, as described above. It doesn't run on ordinary pushes.
+For a full check of a branch, go to Actions → CI → Run workflow and tick
+**visual**.
 
 It's how we found a bug in Compose Multiplatform. On desktop, iOS and the web,
 Compose's Skia renderer ignores `StrokeJoin.Round` and draws a miter join

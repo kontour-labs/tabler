@@ -10,6 +10,10 @@
 # elsewhere would be a Kotlin bug rather than ours. **full** compiles the other
 # five as well; the release compiles them every time anyway.
 #
+# **visual** runs the visual check over every icon (`visual-check/run.sh`): each
+# one drawn by Compose and by Chrome, and compared. About six to eight minutes,
+# so only when asked; the release workflow runs it anyway, on what changed.
+#
 # ### When it runs
 #
 # Pushes to `main` that change code, and by hand. **Not** on pull requests,
@@ -47,6 +51,13 @@ on:
         type: boolean
         required: false
         default: false
+      visual:
+        description: >-
+          Draw every icon with Compose and with Chrome and compare them, as a
+          release does after a code change. About six to eight minutes.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -62,6 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full }}
+      VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.visual }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,8 +92,8 @@ jobs:
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: konan-${{ runner.os }}-
 
-      - name: Check the release notes script
-        run: bash -n .github/scripts/release-notes.sh
+      - name: Check the release scripts
+        run: for script in .github/scripts/*.sh visual-check/run.sh; do bash -n "$script"; done
 
       # One invocation: each `./gradlew --no-daemon` is a fresh JVM and a fresh
       # task graph.
@@ -93,6 +105,26 @@ jobs:
           fi
           echo "${tasks[*]}"
           ./gradlew --no-daemon "${tasks[@]}"
+
+      # After the tests, which have compiled what it draws.
+      - name: Visual check
+        if: env.VISUAL == 'true'
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
+        run: |
+          npm install --no-save --no-package-lock --silent playwright-core@1.56.1
+          visual-check/run.sh
+
+      - name: Upload the contact sheet
+        if: always() && env.VISUAL == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-check
+          path: |
+            visual-check/build/contact-sheet.png
+            visual-check/build/report.tsv
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload test reports
         if: failure()

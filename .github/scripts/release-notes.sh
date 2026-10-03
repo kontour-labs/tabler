@@ -5,24 +5,18 @@
 #
 # Releases are Tabler's versions, `3.48.0`, or those with a fourth part for a
 # re-release of the same icons, `3.48.0.1`. The previous release may be empty,
-# for the first. Reads both Tabler releases' npm tarballs — 1.2 MB each, the
-# same `tabler-nodes-<set>.json` the generator reads — and compares the two by
-# icon name, then by path data.
+# for the first. What changed comes from `icon-diff.sh`, which the visual
+# check's scope reads too.
 set -euo pipefail
 
+here=$(cd "$(dirname "$0")" && pwd)
 previous=${1:-}
 current=${2:?usage: release-notes.sh <previous release> <this release>}
 tabler() { cut -d. -f1-3 <<<"$1"; }
 new=$(tabler "$current")
 old=$([ -n "$previous" ] && tabler "$previous" || true)
 
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-fetch() {
-  mkdir -p "$work/$1"
-  curl -fsSL --retry 3 "https://registry.npmjs.org/@tabler/icons/-/icons-$1.tgz" |
-    tar -xz -C "$work/$1" package/tabler-nodes-outline.json package/tabler-nodes-filled.json
-}
+export TABLER_CACHE=${TABLER_CACHE:-$(mktemp -d)}
 
 # `a-b-2` → "`Tabler.Outline.AB2` (`a-b-2`)", the name it is used by.
 list() {
@@ -37,11 +31,13 @@ list() {
 echo "Icons generated from [Tabler Icons $new](https://github.com/tabler/tabler-icons/releases/tag/v$new)."
 echo
 
-fetch "$new"
 if [ -z "$old" ]; then
+  mkdir -p "$TABLER_CACHE/$new"
+  [ -f "$TABLER_CACHE/$new/package/tabler-nodes-filled.json" ] ||
+    curl -fsSL --retry 3 "https://registry.npmjs.org/@tabler/icons/-/icons-$new.tgz" |
+      tar -xz -C "$TABLER_CACHE/$new" package/tabler-nodes-outline.json package/tabler-nodes-filled.json
   for set in outline filled; do
-    count=$(jq 'length' "$work/$new/package/tabler-nodes-$set.json")
-    echo "- $count $set icons"
+    echo "- $(jq 'length' "$TABLER_CACHE/$new/package/tabler-nodes-$set.json") $set icons"
   done
   exit 0
 fi
@@ -51,16 +47,15 @@ if [ "$old" = "$new" ]; then
   exit 0
 fi
 
-fetch "$old"
+diff=$("$here/icon-diff.sh" "$old" "$new")
+pick() { awk -v kind="$1" -v set="$2" '$1 == kind && $2 == set { print $3 }' <<<"$diff"; }
+
 breaking=false
 for set in outline filled; do
   title=$(tr '[:lower:]' '[:upper:]' <<<"${set:0:1}")${set:1}
-  before="$work/$old/package/tabler-nodes-$set.json"
-  after="$work/$new/package/tabler-nodes-$set.json"
-  added=$(jq -r --slurpfile o "$before" 'keys - ($o[0] | keys) | .[]' "$after")
-  removed=$(jq -r --slurpfile n "$after" 'keys - ($n[0] | keys) | .[]' "$before")
-  changed=$(jq -r --slurpfile o "$before" \
-    'to_entries[] | select($o[0][.key] != null and $o[0][.key] != .value) | .key' "$after")
+  added=$(pick added "$set")
+  changed=$(pick changed "$set")
+  removed=$(pick removed "$set")
 
   echo "## $title"
   echo

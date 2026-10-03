@@ -1,14 +1,25 @@
-# Publishes the icons whenever Tabler publishes a release. No tests: those run in
-# `ci.yml`, when the code that generates the icons changes, and a release only
-# changes which Tabler release they are generated from.
+# Publishes the icons whenever Tabler publishes a release. No unit tests: those
+# run in `ci.yml`, when the code that generates the icons changes. What a release
+# does check is how the icons look, before anything leaves the runner.
 #
 #   check    asks npm for Tabler's latest release and stops if it is already
 #            tagged here. Ten seconds, no checkout: this is all a quiet week costs.
-#   release  pins it in gradle.properties, commits and tags that on main, builds
-#            all six targets, publishes to GitHub Packages, and writes a GitHub
+#   release  pins it in gradle.properties and commits and tags that locally;
+#            draws the icons that need it with Compose and with Chrome and
+#            compares them (`visual-check/`); and only then pushes, builds all
+#            six targets, publishes to GitHub Packages, and writes a GitHub
 #            release listing the icons added, redrawn and removed.
 #
-# ### When it runs
+# ### The visual check
+#
+# Scoped by `.github/scripts/visual-scope.sh` against the previous release: only
+# the icons Tabler added or redrew, normally a minute or two; every icon when the
+# code that draws them changed since then (the generator, the modules, the build,
+# the check itself), about six to eight. On the first release, every icon. A
+# failure stops the release before the push. The contact sheet and every score
+# are uploaded as the `visual-check` artifact either way.
+#
+### When it runs
 #
 # **Mondays at 06:17 UTC.** Tabler has no release day, but most of its releases
 # land on a Friday, Saturday or Sunday evening, UTC, so a Monday-morning check picks
@@ -27,10 +38,10 @@
 #
 # ### Recovery
 #
-# The tag goes up before the build, so a protected `main` fails in seconds
-# rather than after the compile. If the build or the upload fails after that,
-# **Re-run failed jobs**. The pin step sees the tag already exists and builds
-# what it points at. A re-run after a *partial* upload is refused by GitHub
+# The commit and tag go up after the visual check and before the build. If the
+# build or the upload fails after that, **Re-run failed jobs**: the pin step
+# sees the tag already exists, builds what it points at, and skips the visual
+# check that tag has already passed. A re-run after a *partial* upload is refused by GitHub
 # Packages, which never overwrites a version: delete that version's packages,
 # or push `v<version>.1`.
 #
@@ -145,8 +156,10 @@ jobs:
           echo "previous=$previous" >> "$GITHUB_OUTPUT"
           echo "Previous release: ${previous:-none}"
 
+      # Committed and tagged here, pushed only once the icons have been looked at.
       # Idempotent, so that a re-run after the tag went up builds that tag.
-      - name: Pin Tabler ${{ env.VERSION }} on main and tag it
+      - name: Pin Tabler ${{ env.VERSION }} and tag it
+        id: pin
         if: github.event_name != 'push'
         run: |
           set -euo pipefail
@@ -154,6 +167,7 @@ jobs:
             echo "v$VERSION is already tagged; building it."
             git fetch --depth=1 origin "+refs/tags/v$VERSION:refs/tags/v$VERSION"
             git checkout --detach "v$VERSION"
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -170,11 +184,7 @@ jobs:
           # Already pinned when main was bumped by hand, as for the first release.
           git diff --quiet || git commit -am "Tabler Icons $VERSION"
           git tag "v$VERSION"
-          if [ "$DRY_RUN" = true ]; then
-            echo "Dry run: not pushing."
-          else
-            git push --atomic origin HEAD:main "v$VERSION"
-          fi
+          echo "tagged=false" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -195,6 +205,56 @@ jobs:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: konan-${{ runner.os }}-
+
+      # Not for a tag this workflow already pushed, which passed it then.
+      - name: What the visual check has to look at
+        id: scope
+        if: steps.pin.outputs.tagged != 'true' || env.DRY_RUN == 'true'
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.previous }}
+        run: |
+          set -euo pipefail
+          if [ -n "$PREVIOUS" ]; then
+            git fetch --depth=1 origin "+refs/tags/v$PREVIOUS:refs/tags/v$PREVIOUS"
+          fi
+          reason=$(.github/scripts/visual-scope.sh "${PREVIOUS:+v$PREVIOUS}" "$RUNNER_TEMP/visual-scope.txt")
+          echo "$reason"
+          echo "**Visual check:** $reason" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(cat "$RUNNER_TEMP/visual-scope.txt")" = all ]; then
+            echo "list=" >> "$GITHUB_OUTPUT"
+          elif [ -s "$RUNNER_TEMP/visual-scope.txt" ]; then
+            echo "list=$RUNNER_TEMP/visual-scope.txt" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Tabler's SVGs are drawn by the runner's own Chrome, through
+      # playwright-core: no browser to download.
+      - name: Visual check
+        if: steps.scope.outcome == 'success' && steps.scope.outputs.skip != 'true'
+        env:
+          LIST: ${{ steps.scope.outputs.list }}
+          PLAYWRIGHT_CHANNEL: chrome
+        run: |
+          npm install --no-save --no-package-lock --silent playwright-core@1.56.1
+          visual-check/run.sh ${LIST:+"$LIST"}
+
+      - name: Upload the contact sheet
+        if: always() && steps.scope.outcome == 'success' && steps.scope.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-check
+          path: |
+            visual-check/build/contact-sheet.png
+            visual-check/build/report.tsv
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Before the build, so that a protected `main` fails in seconds rather than
+      # after the compile.
+      - name: Push the pin and the tag
+        if: github.event_name != 'push' && steps.pin.outputs.tagged != 'true' && env.DRY_RUN != 'true'
+        run: git push --atomic origin HEAD:main "v$VERSION"
 
       # One invocation: generating, compiling every target, and uploading. The
       # coordinates print first, because a package registry has no undo.

@@ -7,3 +7,5 @@ local.properties
 .DS_Store
 captures
 kotlin-js-store/
+node_modules/
+package-lock.json

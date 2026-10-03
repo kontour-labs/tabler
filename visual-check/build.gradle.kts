@@ -4,7 +4,6 @@ plugins {
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeMultiplatform)
-    application
 }
 
 dependencies {
@@ -13,7 +12,14 @@ dependencies {
     implementation(compose.desktop.currentOs)
 }
 
-application {
-    mainClass.set("VisualCheckKt")
-    applicationDefaultJvmArgs = listOf("-Xmx2g", "-Djava.awt.headless=true")
+// The classpath, for `run.sh` to start the check with `java` itself once Gradle
+// has exited: two JVMs at once — Gradle's 3 GB and this one's — is more than a
+// 7 GB runner wants. Not `installDist`, which refuses the two Compose jars that
+// share a file name.
+val classpathFile = layout.buildDirectory.file("classpath.txt")
+tasks.register("writeClasspath") {
+    val runtime = sourceSets.main.get().runtimeClasspath
+    inputs.files(runtime)
+    outputs.file(classpathFile)
+    doLast { classpathFile.get().asFile.writeText(runtime.files.joinToString(File.pathSeparator)) }
 }
