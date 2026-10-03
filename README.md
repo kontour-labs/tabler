@@ -1,4 +1,4 @@
-# tabler-icons
+# tabler
 
 Every [Tabler icon](https://tabler.io/icons), outline and filled, as a Compose
 Multiplatform `ImageVector`. They're generated from each Tabler release and
@@ -28,7 +28,7 @@ token with `read:packages`.
 // settings.gradle.kts
 dependencyResolutionManagement {
     repositories {
-        maven("https://maven.pkg.github.com/kontour-labs/tabler-icons") {
+        maven("https://maven.pkg.github.com/kontour-labs/tabler") {
             credentials {
                 username = providers.gradleProperty("gpr.user").orNull ?: System.getenv("GITHUB_ACTOR")
                 password = providers.gradleProperty("gpr.key").orNull ?: System.getenv("GITHUB_TOKEN")

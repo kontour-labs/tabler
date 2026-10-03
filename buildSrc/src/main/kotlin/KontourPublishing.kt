@@ -72,7 +72,7 @@ fun Project.kontourPublishing(displayName: String, summary: String) {
         repositories {
             maven {
                 name = "GitHubPackages"
-                url = uri("https://maven.pkg.github.com/kontour-labs/tabler-icons")
+                url = uri("https://maven.pkg.github.com/kontour-labs/tabler")
                 credentials {
                     username = providers.environmentVariable("GITHUB_ACTOR").orNull
                     password = providers.environmentVariable("GITHUB_TOKEN").orNull
@@ -84,7 +84,7 @@ fun Project.kontourPublishing(displayName: String, summary: String) {
             pom {
                 name.set(displayName)
                 description.set(summary)
-                url.set("https://github.com/kontour-labs/tabler-icons")
+                url.set("https://github.com/kontour-labs/tabler")
                 licenses {
                     license {
                         // The icons are Tabler's, converted; the licence is theirs.
@@ -94,8 +94,8 @@ fun Project.kontourPublishing(displayName: String, summary: String) {
                     }
                 }
                 scm {
-                    url.set("https://github.com/kontour-labs/tabler-icons")
-                    connection.set("scm:git:https://github.com/kontour-labs/tabler-icons.git")
+                    url.set("https://github.com/kontour-labs/tabler")
+                    connection.set("scm:git:https://github.com/kontour-labs/tabler.git")
                 }
             }
         }
