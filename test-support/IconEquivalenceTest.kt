@@ -60,9 +60,20 @@ class IconEquivalenceTest {
 
     private fun compare(property: String, expected: List<String>): String? {
         val vector = load(property)
-        val paths = vector.root.toList()
-        if (paths.size != expected.size) return "${paths.size} paths, expected ${expected.size}"
         if (vector.viewportWidth != 24f || vector.viewportHeight != 24f) return "viewport is not 24×24"
+
+        // An icon with a stroke starts with the primer, which draws nothing and makes
+        // Compose's Skia renderer honour round joins: see `IconFile` in buildSrc.
+        var paths = vector.root.toList()
+        if (expected.any { it.split(';')[0][1] == '1' }) {
+            val primer = paths.firstOrNull() as? VectorPath ?: return "no primer path"
+            val inert = primer.fill == null && primer.stroke == SolidColor(Color.Transparent) &&
+                primer.strokeLineJoin == StrokeJoin.Miter && primer.strokeLineWidth > 0f &&
+                primer.pathData == listOf(PathNode.MoveTo(0f, 0f))
+            if (!inert) return "the first path is not the primer: $primer"
+            paths = paths.drop(1)
+        }
+        if (paths.size != expected.size) return "${paths.size} paths, expected ${expected.size}"
 
         paths.zip(expected).forEachIndexed { index, (node, spec) ->
             val path = node as? VectorPath ?: return "node $index is a ${node::class.simpleName}"

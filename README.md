@@ -142,6 +142,28 @@ The generator is in [`buildSrc/src/main/kotlin/tabler/`](buildSrc/src/main/kotli
 Nothing generated is committed. The icons are built from the pinned release
 every time, into `build/`.
 
+### Do they look like Tabler's?
+
+```sh
+visual-check/run.sh      # needs Node with Playwright: npm i -g playwright && npx playwright install chromium
+```
+
+This draws every icon twice: Tabler's SVG in Chromium, and our `ImageVector` in
+Compose Desktop. Then it compares the pixels. It fails if any icon differs by
+more than anti-aliasing, and also if a deliberately wrong drawing (a different
+icon, or a thinner stroke) gets through. It writes a score for every icon to
+`visual-check/build/report.tsv` and a contact sheet to
+`visual-check/build/contact-sheet.png`. It takes about five minutes and isn't
+part of CI. Run it after changing how the icons are drawn.
+
+It's how we found a bug in Compose Multiplatform. On desktop, iOS and the web,
+Compose's Skia renderer ignores `StrokeJoin.Round` and draws a miter join
+instead, so the corners of 297 outline icons came out as spikes. Composables'
+icons have the same problem. To work around it, each icon with a stroke
+starts with one path that draws nothing and uses a miter join. After that, the
+round joins reach Skia. `IconFile` explains how. Android's renderer doesn't have
+the bug, and the extra path costs nothing there.
+
 ## Licence
 
 The icons are Tabler's, under the MIT licence: see [LICENSE](LICENSE).

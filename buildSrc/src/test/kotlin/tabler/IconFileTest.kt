@@ -78,7 +78,10 @@ class IconFileTest {
     }
 }
 
-/** The user's example of composables' `Abc`, under this package, without the transparent fill. */
+/**
+ * The user's example of composables' `Abc`, under this package, without the
+ * transparent fill, and with the primer that makes Compose honour round joins.
+ */
 private val ABC = """package io.kontour.icons.tabler.outline
 
 import androidx.compose.ui.graphics.Color
@@ -101,6 +104,14 @@ public val Tabler.Outline.Abc: ImageVector
             viewportWidth = 24f,
             viewportHeight = 24f
         ).apply {
+            // Draws nothing. It makes Compose's Skia renderer honour the round joins below.
+            path(
+                stroke = SolidColor(Color.Transparent),
+                strokeLineWidth = 1f,
+                strokeLineJoin = StrokeJoin.Miter
+            ) {
+                moveTo(0f, 0f)
+            }
             path(
                 stroke = SolidColor(Color(0xFF000000)),
                 strokeLineWidth = 2f,

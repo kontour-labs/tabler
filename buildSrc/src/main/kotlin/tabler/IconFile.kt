@@ -33,6 +33,20 @@ import com.squareup.kotlinpoet.PropertySpec
  * Nothing here may depend on the Tabler version — not even a comment — because a
  * set Tabler left alone must come out byte for byte the same, which is what lets
  * the build cache skip compiling it.
+ *
+ * ### The primer
+ *
+ * An icon with any stroke starts with one path that draws nothing: empty, and
+ * stroked in transparent with a miter join. It is there because Compose
+ * Multiplatform's Skia renderer (desktop, iOS, web) loses `StrokeJoin.Round`
+ * otherwise. Its paint records Round as its starting join without passing it to
+ * Skia, whose own default is a miter, and a draw only passes a join on that
+ * differs from the recorded one, so the first Round never arrives. The corners
+ * then come out as spikes: 297 of Tabler's outline icons looked visibly wrong,
+ * among them `bell` and `star`, measured against Tabler's SVGs in Chromium
+ * (`visual-check/`). Drawing a miter first makes every Round after it a change,
+ * which reaches Skia. Android's renderer has no such bug, and on Android, or once
+ * Compose is fixed, the primer still costs nothing.
  */
 internal object IconFile {
 
@@ -78,12 +92,29 @@ internal object IconFile {
         unindent()
         add(").apply·{\n")
         indent()
+        if (icon.paths.any { it.stroke }) primer()
         icon.paths.forEach { path(it) }
         unindent()
         add("}.build()\n")
         add("\n")
         add("return·%N!!\n", backing)
     }.build()
+
+    /** See "The primer", above. */
+    private fun CodeBlock.Builder.primer() {
+        add("// Draws nothing. It makes Compose's Skia renderer honour the round joins below.\n")
+        add("%M(\n", this@IconFile.path)
+        indent()
+        add("stroke·=·%T(%T.Transparent),\n", solidColor, color)
+        add("strokeLineWidth·=·1f,\n")
+        add("strokeLineJoin·=·%T.Miter\n", strokeJoin)
+        unindent()
+        add(")·{\n")
+        indent()
+        add("moveTo(0f,·0f)\n")
+        unindent()
+        add("}\n")
+    }
 
     private fun CodeBlock.Builder.path(path: IconPath) {
         val parameters = buildList {
