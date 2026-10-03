@@ -1,0 +1,229 @@
+# Publishes the icons whenever Tabler publishes a release. No tests: those run in
+# `ci.yml`, when the code that generates the icons changes, and a release only
+# changes which Tabler release they are generated from.
+#
+#   check    asks npm for Tabler's latest release and stops if it is already
+#            tagged here. Ten seconds, no checkout: this is all a quiet week costs.
+#   release  pins it in gradle.properties, commits and tags that on main, builds
+#            all six targets, publishes to GitHub Packages, and writes a GitHub
+#            release listing the icons added, redrawn and removed.
+#
+# ### When it runs
+#
+# **Mondays at 06:17 UTC.** Tabler has no release day, but most of its releases
+# land on a Friday, Saturday or Sunday evening, UTC, so a Monday-morning check picks
+# them up within about two days. They also come in bursts: 3.42, 3.43 and 3.44
+# landed within four days, and a weekly check turns a burst like that into one
+# build. Each check is billed as a minute, which comes to about four a month.
+#
+# **By hand**, from Actions → Release → Run workflow: blank for Tabler's latest
+# release, or a version. **dry run** builds and publishes to the runner's Maven
+# local, and changes nothing anywhere.
+#
+# **A `v*` tag pushed by a person** publishes that tag as it stands. That is how a
+# fix to the generator is re-released against the same icons: `v3.48.0.1` on
+# a commit whose gradle.properties says 3.48.0. The bot's own tags never start
+# this workflow, because pushes made with `GITHUB_TOKEN` do not.
+#
+# ### Recovery
+#
+# The tag goes up before the build, so a protected `main` fails in seconds
+# rather than after the compile. If the build or the upload fails after that,
+# **Re-run failed jobs**. The pin step sees the tag already exists and builds
+# what it points at. A re-run after a *partial* upload is refused by GitHub
+# Packages, which never overwrites a version: delete that version's packages,
+# or push `v<version>.1`.
+#
+# ### main must accept the bot's push
+#
+# The pin is committed to `main` by `github-actions[bot]`. If `main` is protected,
+# either let GitHub Actions bypass the rule, or give the checkout a deploy key with
+# write access (`ssh-key:` below) that is allowed to.
+
+name: Release
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      tabler_version:
+        description: >-
+          The Tabler release to publish, e.g. 3.48.0. Blank for the latest.
+        required: false
+        default: ''
+      dry_run:
+        description: >-
+          Build and publish to Maven local only: no commit, no tag, no upload,
+          no GitHub release. Runs even when the release is already published.
+        type: boolean
+        required: false
+        default: false
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# One release at a time, and never cancelled halfway through an upload.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Is there a new Tabler release?
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      version: ${{ steps.decide.outputs.version }}
+      integrity: ${{ steps.decide.outputs.integrity }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          WANTED: ${{ inputs.tabler_version }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          say() { echo "$1"; echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+
+          # A tag somebody pushed: publish it as it is.
+          if [ "$EVENT" = push ]; then
+            { echo "release=true"; echo "version=${REF_NAME#v}"; } >> "$GITHUB_OUTPUT"
+            say "Publishing $REF_NAME as it stands."
+            exit 0
+          fi
+
+          meta=$(curl -fsS --retry 3 "https://registry.npmjs.org/@tabler/icons/${WANTED:-latest}")
+          version=$(jq -r .version <<<"$meta")
+          integrity=$(jq -r .dist.integrity <<<"$meta")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { say "npm answered version '$version'."; exit 1; }
+          { echo "version=$version"; echo "integrity=$integrity"; } >> "$GITHUB_OUTPUT"
+
+          # Fails, rather than answering "no", if GitHub cannot be asked.
+          tagged=$(git ls-remote --tags "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" "refs/tags/v$version")
+          if [ -z "$tagged" ] || [ "$DRY_RUN" = true ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            if [ -n "$tagged" ]; then say "Tabler Icons $version is already released; dry run anyway."; else say "Releasing Tabler Icons $version."; fi
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            say "Tabler Icons $version is already released. Nothing to do."
+          fi
+
+  release:
+    name: Release
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    # Ubuntu, not macOS: Kotlin cross-compiles the iOS klibs a consumer resolves.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      INTEGRITY: ${{ needs.check.outputs.integrity }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # `main` itself, not the commit the schedule fired on, so the bot's commit
+      # lands on top of whatever is there now. A tag event builds the tag.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref || 'main' }}
+
+      - name: Find the release before this one
+        id: previous
+        run: |
+          set -euo pipefail
+          previous=$(git ls-remote --tags --refs origin 'refs/tags/v*' | sed 's|.*refs/tags/v||' |
+            { grep -E '^[0-9]+(\.[0-9]+){2,3}$' || true; } |
+            { cat; echo "$VERSION"; } | sort -uV | grep -B1 -xF "$VERSION" | grep -vxF "$VERSION" || true)
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          echo "Previous release: ${previous:-none}"
+
+      # Idempotent, so that a re-run after the tag went up builds that tag.
+      - name: Pin Tabler ${{ env.VERSION }} on main and tag it
+        if: github.event_name != 'push'
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "v$VERSION is already tagged; building it."
+            git fetch --depth=1 origin "+refs/tags/v$VERSION:refs/tags/v$VERSION"
+            git checkout --detach "v$VERSION"
+            exit 0
+          fi
+
+          pinned=$(sed -n 's/^tabler\.version=//p' gradle.properties)
+          if [ "$(printf '%s\n%s\n' "$pinned" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]; then
+            echo "::error::main is pinned to Tabler $pinned, which is newer than $VERSION."
+            exit 1
+          fi
+          sed -i "s|^tabler\.version=.*|tabler.version=$VERSION|; s|^tabler\.integrity=.*|tabler.integrity=$INTEGRITY|" gradle.properties
+          git diff
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Already pinned when main was bumped by hand, as for the first release.
+          git diff --quiet || git commit -am "Tabler Icons $VERSION"
+          git tag "v$VERSION"
+          if [ "$DRY_RUN" = true ]; then
+            echo "Dry run: not pushing."
+          else
+            git push --atomic origin HEAD:main "v$VERSION"
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The dependency cache, and the build cache that lets a set Tabler left
+      # alone skip its compiles: its generated sources are byte for byte the
+      # last release's.
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Konan pulls a compiler and a platform klib set per target, and neither is
+      # in the Gradle cache: without this, every release downloads hundreds of
+      # megabytes for the two iOS targets.
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      # One invocation: generating, compiling every target, and uploading. The
+      # coordinates print first, because a package registry has no undo.
+      - name: Publish ${{ env.VERSION }}
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            publish=publishToMavenLocal
+          else
+            publish=publishAllPublicationsToGitHubPackagesRepository
+          fi
+          ./gradlew --no-daemon "-Pkontour.version=$VERSION" \
+            :tabler-icons-core:coordinate :tabler-icons-outline:coordinate :tabler-icons-filled:coordinate \
+            "$publish"
+
+      - name: Write the release notes
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.previous }}
+        run: |
+          .github/scripts/release-notes.sh "$PREVIOUS" "$VERSION" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub release
+        if: env.DRY_RUN != 'true'
+        run: |
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "The release for v$VERSION already exists."
+          else
+            gh release create "v$VERSION" --verify-tag --title "Tabler Icons $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
