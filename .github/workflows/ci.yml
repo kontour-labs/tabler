@@ -70,12 +70,12 @@ concurrency:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full }}
       VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.visual }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-java@v4
         with:

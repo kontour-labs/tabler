@@ -84,7 +84,7 @@ concurrency:
 jobs:
   check:
     name: Is there a new Tabler release?
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       release: ${{ steps.decide.outputs.release }}
       version: ${{ steps.decide.outputs.version }}
@@ -130,7 +130,7 @@ jobs:
     needs: check
     if: needs.check.outputs.release == 'true'
     # Ubuntu, not macOS: Kotlin cross-compiles the iOS klibs a consumer resolves.
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
       packages: write
@@ -142,7 +142,7 @@ jobs:
     steps:
       # `main` itself, not the commit the schedule fired on, so the bot's commit
       # lands on top of whatever is there now. A tag event builds the tag.
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ github.event_name == 'push' && github.ref || 'main' }}
 
