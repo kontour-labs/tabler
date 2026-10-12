@@ -5,9 +5,15 @@ import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.withType
 
 /**
- * Publishing, for every module: the version, the coordinate task, the repository
- * and the POM. The same rules as `kontour-labs/ui`'s, with one addition: the
- * version is Tabler's.
+ * Publishing, for every module: the version, the coordinate task and the POM.
+ * The same rules as `kontour-labs/ui`'s, with one addition: the version is
+ * Tabler's.
+ *
+ * The upload itself is `com.vanniktech.maven.publish`, applied in each module:
+ * Maven Central, signed, with the sources and javadoc jars Central requires.
+ * It reads its credentials as Gradle properties, which CI sets from secrets as
+ * `ORG_GRADLE_PROJECT_mavenCentralUsername`, `…mavenCentralPassword`,
+ * `…signingInMemoryKey` and `…signingInMemoryKeyPassword`.
  *
  * ### The version
  *
@@ -22,8 +28,8 @@ import org.gradle.kotlin.dsl.withType
  * A release version must then be `tabler.version` itself (`3.48.0`) or that with
  * a fourth part (`3.48.0.1`), which is how a fix to the generator is re-released
  * against the same icons. Anything else would claim one Tabler release and ship
- * another, so it fails before anything is uploaded — an unpublish on a package
- * registry is a support ticket, and the check costs a string comparison.
+ * another, so it fails before anything is uploaded — Maven Central never
+ * deletes or replaces a version, and the check costs a string comparison.
  *
  * Everything is read through `providers`, never `System.getenv`: the
  * configuration cache is on, and a direct environment read at configuration
@@ -69,17 +75,6 @@ fun Project.kontourPublishing(displayName: String, summary: String) {
     }
 
     extensions.configure<PublishingExtension> {
-        repositories {
-            maven {
-                name = "GitHubPackages"
-                url = uri("https://maven.pkg.github.com/kontour-labs/tabler")
-                credentials {
-                    username = providers.environmentVariable("GITHUB_ACTOR").orNull
-                    password = providers.environmentVariable("GITHUB_TOKEN").orNull
-                }
-            }
-        }
-
         publications.withType<MavenPublication>().configureEach {
             pom {
                 name.set(displayName)
@@ -93,9 +88,17 @@ fun Project.kontourPublishing(displayName: String, summary: String) {
                         comments.set("Tabler Icons, Copyright (c) 2020-2026 Paweł Kuna.")
                     }
                 }
+                developers {
+                    developer {
+                        id.set("kontour-labs")
+                        name.set("Kontour Labs")
+                        url.set("https://github.com/kontour-labs")
+                    }
+                }
                 scm {
                     url.set("https://github.com/kontour-labs/tabler")
                     connection.set("scm:git:https://github.com/kontour-labs/tabler.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/kontour-labs/tabler.git")
                 }
             }
         }

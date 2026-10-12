@@ -5,13 +5,21 @@ import tabler.GenerateTablerIcons
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidMultiplatformLibrary)
-    `maven-publish`
+    alias(libs.plugins.mavenPublish)
 }
 
 kontourPublishing(
     displayName = "Tabler Icons for Compose: filled",
     summary = "Every filled Tabler icon as a Compose Multiplatform ImageVector, Tabler.Filled.<Name>.",
 )
+
+// Maven Central: see `kontourPublishing` in buildSrc for the rest. Signed
+// wherever there is a key, which CI always has and Central insists on; without
+// one, as for a `publishToMavenLocal` dry run, unsigned.
+mavenPublishing {
+    publishToMavenCentral(automaticRelease = true)
+    if (providers.gradleProperty("signingInMemoryKey").isPresent) signAllPublications()
+}
 
 // Every icon, generated from the Tabler release in gradle.properties. There is
 // no source in this module: see `buildSrc/src/main/kotlin/tabler/`.
