@@ -21,27 +21,13 @@ Wasm, the same six as [Kontour UI](https://github.com/kontour-labs/ui).
 
 ## Installing
 
-The packages are on GitHub Packages, which needs credentials even to read: a
-token with `read:packages`.
-
-```kotlin
-// settings.gradle.kts
-dependencyResolutionManagement {
-    repositories {
-        maven("https://maven.pkg.github.com/kontour-labs/tabler") {
-            credentials {
-                username = providers.gradleProperty("gpr.user").orNull ?: System.getenv("GITHUB_ACTOR")
-                password = providers.gradleProperty("gpr.key").orNull ?: System.getenv("GITHUB_TOKEN")
-            }
-        }
-    }
-}
-```
+On Maven Central from 3.49.0.1, so `mavenCentral()` is all it needs, with no
+token. Versions before that are only on GitHub Packages.
 
 ```toml
 # gradle/libs.versions.toml
 [versions]
-tabler-icons = "3.48.0"
+tabler-icons = "3.49.0.1"
 
 [libraries]
 tabler-icons-outline = { module = "io.kontour:tabler-icons-outline", version.ref = "tabler-icons" }
@@ -103,7 +89,8 @@ the job ends after about ten seconds. If it isn't, the workflow does this:
    Tabler's, the release stops here and nothing is pushed or published. The
    contact sheet is uploaded as the run's `visual-check` artifact.
 3. Pushes the commit to `main` as `github-actions[bot]`, along with the tag.
-4. Builds all six targets and publishes to GitHub Packages.
+4. Builds all six targets, signs them and publishes them to Maven Central,
+   where they can be resolved about half an hour later.
 5. Creates a GitHub release that lists the icons added, redrawn and removed.
    Removals are breaking, and they're flagged as such.
 
@@ -112,8 +99,7 @@ generates the icons changes, not on every Tabler release. The generator fails
 the build on anything in Tabler's data it doesn't understand, so a format change
 stops a release instead of shipping broken icons.
 
-Both workflows are written for a private repository's minute allowance. A week
-with nothing new costs one billed minute. A release costs one build, and a set
+A week with nothing new costs one ten-second check. A release costs one build, and a set
 Tabler left alone comes out of the Gradle build cache instead of being compiled
 again. The visual check adds a minute or two when it only checks the new icons,
 and six to eight minutes when the code changed and it checks all of them.

@@ -16,10 +16,11 @@
 #
 # ### When it runs
 #
-# Pushes to `main` that change code, and by hand. **Not** on pull requests,
-# for the same reason as kontour-labs/ui: the repository is private and every
-# minute is billed. A branch that wants the checks asks for them: Actions → CI →
-# Run workflow, on that branch.
+# Pushes to `main` that change code, and by hand. **Not** on pull requests: a
+# branch that wants the checks asks for them, Actions → CI → Run workflow, on
+# that branch. The repository is public, so GitHub's runners cost nothing; the
+# restraint is only so that a pull request is not held up by a build nobody
+# asked for.
 #
 # Not on the release workflow's own commits either, which only move the
 # Tabler pin: pushes made with `GITHUB_TOKEN` start no workflows, and a new
@@ -70,12 +71,12 @@ concurrency:
 jobs:
   test:
     name: Test
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     env:
       FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full }}
       VISUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.visual }}
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
         with:

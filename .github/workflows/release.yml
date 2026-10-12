@@ -7,7 +7,7 @@
 #   release  pins it in gradle.properties and commits and tags that locally;
 #            draws the icons that need it with Compose and with Chrome and
 #            compares them (`visual-check/`); and only then pushes, builds all
-#            six targets, publishes to GitHub Packages, and writes a GitHub
+#            six targets, publishes to Maven Central, and writes a GitHub
 #            release listing the icons added, redrawn and removed.
 #
 # ### The visual check
@@ -25,7 +25,7 @@
 # land on a Friday, Saturday or Sunday evening, UTC, so a Monday-morning check picks
 # them up within about two days. They also come in bursts: 3.42, 3.43 and 3.44
 # landed within four days, and a weekly check turns a burst like that into one
-# build. Each check is billed as a minute, which comes to about four a month.
+# build.
 #
 # **By hand**, from Actions → Release → Run workflow: blank for Tabler's latest
 # release, or a version. **dry run** builds and publishes to the runner's Maven
@@ -41,9 +41,9 @@
 # The commit and tag go up after the visual check and before the build. If the
 # build or the upload fails after that, **Re-run failed jobs**: the pin step
 # sees the tag already exists, builds what it points at, and skips the visual
-# check that tag has already passed. A re-run after a *partial* upload is refused by GitHub
-# Packages, which never overwrites a version: delete that version's packages,
-# or push `v<version>.1`.
+# check that tag has already passed. Central takes a release whole or not at
+# all, and never replaces one: if a version did go out and something after it
+# failed, re-run and the upload is refused; fix forward with `v<version>.1`.
 #
 # ### main must accept the bot's push
 #
@@ -84,7 +84,7 @@ concurrency:
 jobs:
   check:
     name: Is there a new Tabler release?
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.decide.outputs.release }}
       version: ${{ steps.decide.outputs.version }}
@@ -130,10 +130,9 @@ jobs:
     needs: check
     if: needs.check.outputs.release == 'true'
     # Ubuntu, not macOS: Kotlin cross-compiles the iOS klibs a consumer resolves.
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
     env:
       VERSION: ${{ needs.check.outputs.version }}
       INTEGRITY: ${{ needs.check.outputs.integrity }}
@@ -142,7 +141,7 @@ jobs:
     steps:
       # `main` itself, not the commit the schedule fired on, so the bot's commit
       # lands on top of whatever is there now. A tag event builds the tag.
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'push' && github.ref || 'main' }}
 
@@ -256,17 +255,20 @@ jobs:
         if: github.event_name != 'push' && steps.pin.outputs.tagged != 'true' && env.DRY_RUN != 'true'
         run: git push --atomic origin HEAD:main "v$VERSION"
 
-      # One invocation: generating, compiling every target, and uploading. The
-      # coordinates print first, because a package registry has no undo.
+      # One invocation: generating, compiling every target, signing and
+      # uploading. The coordinates print first, because Central has no undo.
+      # The secrets and their set-up: kontour-labs/ui's docs/building/releasing.md.
       - name: Publish ${{ env.VERSION }}
         env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           if [ "$DRY_RUN" = true ]; then
             publish=publishToMavenLocal
           else
-            publish=publishAllPublicationsToGitHubPackagesRepository
+            publish=publishAndReleaseToMavenCentral
           fi
           ./gradlew --no-daemon "-Pkontour.version=$VERSION" \
             :tabler-icons-core:coordinate :tabler-icons-outline:coordinate :tabler-icons-filled:coordinate \
