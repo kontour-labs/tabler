@@ -5,15 +5,22 @@ import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.withType
 
 /**
- * Publishing, for every module: the version, the coordinate task and the POM.
- * The same rules as `kontour-labs/ui`'s, with one addition: the version is
- * Tabler's.
+ * Publishing, for every module: the version, the coordinate task, the
+ * repository and the POM. The same rules as `kontour-labs/ui`'s, with one
+ * addition: the version is Tabler's.
  *
- * The upload itself is `com.vanniktech.maven.publish`, applied in each module:
- * Maven Central, signed, with the sources and javadoc jars Central requires.
- * It reads its credentials as Gradle properties, which CI sets from secrets as
- * `ORG_GRADLE_PROJECT_mavenCentralUsername`, `…mavenCentralPassword`,
- * `…signingInMemoryKey` and `…signingInMemoryKeyPassword`.
+ * ### The repository
+ *
+ * `https://maven.kontour.io`: an R2 bucket, public through its custom domain,
+ * holding files laid out as Maven lays them out. Gradle publishes into
+ * `build/release-repo` (`publishAllPublicationsToReleaseRepository`), and
+ * `.github/scripts/r2-release.sh` uploads that, having first fetched each
+ * artifact's `maven-metadata.xml` into it so that publishing adds the new
+ * version to the list rather than writing a list of one.
+ *
+ * Releases went to Maven Central for 3.49.0.1, whose free tier caps how much a
+ * month's releases may weigh — about the size of one release of these icons —
+ * and to GitHub Packages before that, which needs a token even to read.
  *
  * ### The version
  *
@@ -28,8 +35,9 @@ import org.gradle.kotlin.dsl.withType
  * A release version must then be `tabler.version` itself (`3.48.0`) or that with
  * a fourth part (`3.48.0.1`), which is how a fix to the generator is re-released
  * against the same icons. Anything else would claim one Tabler release and ship
- * another, so it fails before anything is uploaded — Maven Central never
- * deletes or replaces a version, and the check costs a string comparison.
+ * another, so it fails before anything is uploaded — a release is never
+ * replaced (the upload refuses a version already there), and the check costs
+ * a string comparison.
  *
  * Everything is read through `providers`, never `System.getenv`: the
  * configuration cache is on, and a direct environment read at configuration
@@ -75,6 +83,13 @@ fun Project.kontourPublishing(displayName: String, summary: String) {
     }
 
     extensions.configure<PublishingExtension> {
+        repositories {
+            maven {
+                name = "Release"
+                url = rootProject.layout.buildDirectory.dir("release-repo").get().asFile.toURI()
+            }
+        }
+
         publications.withType<MavenPublication>().configureEach {
             pom {
                 name.set(displayName)

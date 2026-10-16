@@ -21,8 +21,24 @@ Wasm, the same six as [Kontour UI](https://github.com/kontour-labs/ui).
 
 ## Installing
 
-On Maven Central from 3.49.0.1, so `mavenCentral()` is all it needs, with no
-token. Versions before that are only on GitHub Packages.
+From Kontour's own Maven repository, `https://maven.kontour.io`, with no token:
+
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        exclusiveContent {
+            forRepository { maven("https://maven.kontour.io") }
+            filter { includeGroup("io.kontour") }
+        }
+    }
+}
+```
+
+`exclusiveContent` makes it the only place Gradle looks for `io.kontour`, and
+asks it for nothing else. 3.49.0.1 is on Maven Central as well; earlier versions
+are only on GitHub Packages, which needs a token even to read.
 
 ```toml
 # gradle/libs.versions.toml
@@ -89,8 +105,9 @@ the job ends after about ten seconds. If it isn't, the workflow does this:
    Tabler's, the release stops here and nothing is pushed or published. The
    contact sheet is uploaded as the run's `visual-check` artifact.
 3. Pushes the commit to `main` as `github-actions[bot]`, along with the tag.
-4. Builds all six targets, signs them and publishes them to Maven Central,
-   where they can be resolved about half an hour later.
+4. Builds all six targets and publishes them to `maven.kontour.io`, an R2
+   bucket served in public, refusing a version that is already there. They
+   resolve as soon as the upload finishes.
 5. Creates a GitHub release that lists the icons added, redrawn and removed.
    Removals are breaking, and they're flagged as such.
 

@@ -10,9 +10,6 @@ composeMultiplatform = "1.12.1"
 # Build-time only, in buildSrc: it writes the icon sources and never ships.
 kotlinpoet = "2.4.0"
 
-# Publishing to Maven Central, signed. Kept in step with kontour-labs/ui.
-mavenPublish = "0.37.0"
-
 # Android
 android-compileSdk = "37"
 android-minSdk = "29"
@@ -29,4 +26,3 @@ androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library",
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
-mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }

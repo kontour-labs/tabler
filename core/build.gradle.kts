@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidMultiplatformLibrary)
-    alias(libs.plugins.mavenPublish)
+    `maven-publish`
 }
 
 // `Tabler`, `Tabler.Outline` and `Tabler.Filled`, which the icon sets extend.
@@ -14,13 +14,6 @@ kontourPublishing(
     summary = "The Tabler, Tabler.Outline and Tabler.Filled objects the Tabler icon sets extend.",
 )
 
-// Maven Central: see `kontourPublishing` in buildSrc for the rest. Signed
-// wherever there is a key, which CI always has and Central insists on; without
-// one, as for a `publishToMavenLocal` dry run, unsigned.
-mavenPublishing {
-    publishToMavenCentral(automaticRelease = true)
-    if (providers.gradleProperty("signingInMemoryKey").isPresent) signAllPublications()
-}
 
 kotlin {
     explicitApi()
