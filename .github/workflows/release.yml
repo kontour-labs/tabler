@@ -7,7 +7,7 @@
 #   release  pins it in gradle.properties and commits and tags that locally;
 #            draws the icons that need it with Compose and with Chrome and
 #            compares them (`visual-check/`); and only then pushes, builds all
-#            six targets, publishes to Maven Central, and writes a GitHub
+#            six targets, publishes to maven.kontour.io, and writes a GitHub
 #            release listing the icons added, redrawn and removed.
 #
 # ### The visual check
@@ -41,9 +41,10 @@
 # The commit and tag go up after the visual check and before the build. If the
 # build or the upload fails after that, **Re-run failed jobs**: the pin step
 # sees the tag already exists, builds what it points at, and skips the visual
-# check that tag has already passed. Central takes a release whole or not at
-# all, and never replaces one: if a version did go out and something after it
-# failed, re-run and the upload is refused; fix forward with `v<version>.1`.
+# check that tag has already passed. A version already in the repository is
+# never replaced: if one did go out and something after it failed, re-run and
+# the upload is refused; fix forward with `v<version>.1`. One that failed before
+# its upload is not there, and a re-run publishes it.
 #
 # ### main must accept the bot's push
 #
@@ -255,24 +256,32 @@ jobs:
         if: github.event_name != 'push' && steps.pin.outputs.tagged != 'true' && env.DRY_RUN != 'true'
         run: git push --atomic origin HEAD:main "v$VERSION"
 
-      # One invocation: generating, compiling every target, signing and
-      # uploading. The coordinates print first, because Central has no undo.
-      # The secrets and their set-up: kontour-labs/ui's docs/building/releasing.md.
+      # Generating, compiling every target and publishing into
+      # `build/release-repo`, then uploading that to maven.kontour.io: an R2
+      # bucket, public through its custom domain. The coordinates print first.
+      # `prepare` refuses a version that is already there — a release is never
+      # replaced — and fetches each artifact's version list, so the publish adds
+      # to it. The secrets and their set-up: kontour-labs/ui's
+      # docs/building/releasing.md.
       - name: Publish ${{ env.VERSION }}
         env:
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET || 'kontour-maven' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
+          set -euo pipefail
+          coordinates=(:tabler-icons-core:coordinate :tabler-icons-outline:coordinate :tabler-icons-filled:coordinate)
           if [ "$DRY_RUN" = true ]; then
-            publish=publishToMavenLocal
-          else
-            publish=publishAndReleaseToMavenCentral
+            ./gradlew --no-daemon "-Pkontour.version=$VERSION" "${coordinates[@]}" publishToMavenLocal
+            exit 0
           fi
-          ./gradlew --no-daemon "-Pkontour.version=$VERSION" \
-            :tabler-icons-core:coordinate :tabler-icons-outline:coordinate :tabler-icons-filled:coordinate \
-            "$publish"
+          .github/scripts/r2-release.sh prepare build/release-repo "$VERSION" \
+            io/kontour/tabler-icons-core io/kontour/tabler-icons-outline io/kontour/tabler-icons-filled \
+            -- 'tabler-icons-*'
+          ./gradlew --no-daemon "-Pkontour.version=$VERSION" "${coordinates[@]}" \
+            publishAllPublicationsToReleaseRepository
+          .github/scripts/r2-release.sh upload build/release-repo
 
       - name: Write the release notes
         env:
