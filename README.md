@@ -43,7 +43,7 @@ are only on GitHub Packages, which needs a token even to read.
 ```toml
 # gradle/libs.versions.toml
 [versions]
-tabler-icons = "3.49.0.1"
+tabler-icons = "3.51.0"
 
 [libraries]
 tabler-icons-outline = { module = "io.kontour:tabler-icons-outline", version.ref = "tabler-icons" }
@@ -62,6 +62,26 @@ they're generated.
 
 Each set depends on `org.jetbrains.compose.ui:ui` and nothing else. There's no
 Compose compiler plugin to match, because none of the icons is a composable.
+
+### In an Android app with Jetpack Compose
+
+An Android app that isn't multiplatform uses the icons as they are: the
+dependency above, in the app's `build.gradle.kts`, with no Kotlin Multiplatform
+or Compose Multiplatform plugin.
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation("io.kontour:tabler-icons-outline:3.51.0")
+}
+```
+
+On Android, `org.jetbrains.compose.ui:ui` is an empty artifact that depends on
+Jetpack Compose's own `androidx.compose.ui:ui`, so each icon is the `ImageVector`
+Jetpack Compose draws, for any `Icon` or `Image`, Material's included. Checked in
+November 2026 with an app on the Android Gradle plugin 9.3 and Kotlin 2.4,
+drawn on a Pixel. Gradle takes the newer of the app's Compose and the one the
+icons were built with, so an app on an older Compose BOM is raised to it.
 
 ### Names
 
