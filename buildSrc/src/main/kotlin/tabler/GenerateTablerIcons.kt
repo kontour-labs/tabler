@@ -85,6 +85,10 @@ abstract class GenerateTablerIcons : DefaultTask() {
         fileSystem.delete { delete(sourceDir, fixtureDir) }
         val sources = sourceDir.get().asFile
         icons.forEach { IconFile.build(it, style, packageName.get()).writeTo(sources) }
+        // The function every icon's getter draws itself with: see `IconFile`.
+        val helper = sources.resolve(packageName.get().replace('.', '/')).resolve(style.id).resolve("TablerIcon.kt")
+        helper.parentFile.mkdirs()
+        helper.writeText(IconFile.helper(style, packageName.get()))
 
         // One line per icon: name, property, then a field per path, which is
         // `<fill><stroke>;<alpha>;<evenOdd>;<d>`. Tabs and semicolons appear in

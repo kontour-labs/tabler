@@ -96,7 +96,13 @@ import io.kontour.icons.tabler.outline.Star
 ```
 
 Each vector is built the first time it's read and kept, so an app only pays for
-the icons it draws.
+the icons it draws. From 3.51.0.1 an icon is Tabler's own path data, a string
+per path, which one small function in each set draws through Compose's
+`PathParser` at that first read. It was the drawing calls themselves, compiled
+as code, and an icon an app draws is now about a quarter of the size in an iOS
+release build (3.4 KB against 12.4 KB) and the sets a third of the size on the
+JVM. `IconEquivalenceTest` holds every icon to what `PathParser` makes of
+Tabler's data, so they draw exactly what they drew.
 
 ## Switching from composables' compose-icons
 

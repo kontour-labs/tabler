@@ -27,8 +27,7 @@ class IconFileTest {
     fun `filled paths fill, and attributes override the style's defaults`() {
         val star = IconFile.build(Icons.fromNodes("star", listOf(path("M0 0h1z")), Style.Filled), Style.Filled, "p").toString()
         assertTrue("public val Tabler.Filled.Star: ImageVector" in star, star)
-        assertTrue("fill = SolidColor(Color(0xFF000000))\n" in star, star)
-        assertTrue("stroke" !in star, star)
+        assertTrue("tablerIcon(\"star\", \"M0 0h1z\")" in star, star)
 
         val mixed = Icons.fromNodes(
             "mixed",
@@ -49,9 +48,23 @@ class IconFileTest {
             ),
             mixed.paths,
         )
+        // Each path that isn't drawn the set's way says how, ahead of its data.
+        assertEquals(listOf("@f;M0 0h1", "@sa0.5;M0 0h1", "@fse;M0 0h1"), mixed.paths.map { IconFile.encode(it, Style.Outline) })
         val text = IconFile.build(mixed, Style.Outline, "p").toString()
-        assertTrue("strokeAlpha = 0.5f," in text, text)
-        assertTrue("pathFillType = PathFillType.EvenOdd" in text, text)
+        assertTrue("tablerIcon(\"mixed\", \"@f;M0 0h1\", \"@sa0.5;M0 0h1\", \"@fse;M0 0h1\")" in text, text)
+    }
+
+    @Test
+    fun `each set's helper draws a path the set's way unless it says otherwise`() {
+        val outline = IconFile.helper(Style.Outline, "io.kontour.icons.tabler")
+        assertTrue("package io.kontour.icons.tabler.outline" in outline, outline)
+        assertTrue("var fill: Boolean = false" in outline && "var stroke: Boolean = true" in outline, outline)
+        assertTrue("internal fun tablerIcon(name: String, vararg paths: String): ImageVector" in outline, outline)
+        val filled = IconFile.helper(Style.Filled, "io.kontour.icons.tabler")
+        assertTrue("package io.kontour.icons.tabler.filled" in filled, filled)
+        assertTrue("var fill: Boolean = true" in filled && "var stroke: Boolean = false" in filled, filled)
+        // A set's defaults are unprefixed: a filled path in filled is its data alone.
+        assertEquals("M0 0h1z", IconFile.encode(IconPath("M0 0h1z", fill = true, stroke = false, alpha = null, evenOdd = false), Style.Filled))
     }
 
     @Test
@@ -79,87 +92,16 @@ class IconFileTest {
 }
 
 /**
- * The user's example of composables' `Abc`, under this package, without the
- * transparent fill, and with the primer that makes Compose honour round joins.
+ * Composables' `Abc`, under this package: a getter that builds it once and keeps
+ * it, from Tabler's own path data. The set's `tablerIcon` does the drawing.
  */
 private val ABC = """package io.kontour.icons.tabler.outline
 
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
-import androidx.compose.ui.unit.dp
 import io.kontour.icons.tabler.Tabler
 
 public val Tabler.Outline.Abc: ImageVector
-    get() {
-        if (_Abc != null) return _Abc!!
-
-        _Abc = ImageVector.Builder(
-            name = "abc",
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f
-        ).apply {
-            // Draws nothing. It makes Compose's Skia renderer honour the round joins below.
-            path(
-                stroke = SolidColor(Color.Transparent),
-                strokeLineWidth = 1f,
-                strokeLineJoin = StrokeJoin.Miter
-            ) {
-                moveTo(0f, 0f)
-            }
-            path(
-                stroke = SolidColor(Color(0xFF000000)),
-                strokeLineWidth = 2f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round
-            ) {
-                moveTo(3f, 16f)
-                verticalLineToRelative(-6f)
-                arcToRelative(2f, 2f, 0f, true, true, 4f, 0f)
-                verticalLineToRelative(6f)
-            }
-            path(
-                stroke = SolidColor(Color(0xFF000000)),
-                strokeLineWidth = 2f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round
-            ) {
-                moveTo(3f, 13f)
-                horizontalLineToRelative(4f)
-            }
-            path(
-                stroke = SolidColor(Color(0xFF000000)),
-                strokeLineWidth = 2f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round
-            ) {
-                moveTo(10f, 8f)
-                verticalLineToRelative(6f)
-                arcToRelative(2f, 2f, 0f, true, false, 4f, 0f)
-                verticalLineToRelative(-1f)
-                arcToRelative(2f, 2f, 0f, true, false, -4f, 0f)
-                verticalLineToRelative(1f)
-            }
-            path(
-                stroke = SolidColor(Color(0xFF000000)),
-                strokeLineWidth = 2f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round
-            ) {
-                moveTo(20.732f, 12f)
-                arcToRelative(2f, 2f, 0f, false, false, -3.732f, 1f)
-                verticalLineToRelative(1f)
-                arcToRelative(2f, 2f, 0f, false, false, 3.726f, 1.01f)
-            }
-        }.build()
-
-        return _Abc!!
-    }
+    get() = _Abc ?: tablerIcon("abc", "M3 16v-6a2 2 0 1 1 4 0v6", "M3 13h4", "M10 8v6a2 2 0 1 0 4 0v-1a2 2 0 1 0 -4 0v1", "M20.732 12a2 2 0 0 0 -3.732 1v1a2 2 0 0 0 3.726 1.01").also { _Abc = it }
 
 private var _Abc: ImageVector? = null
 """
